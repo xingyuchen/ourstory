@@ -1066,17 +1066,24 @@
     // render any hotspots defined for this scene
     renderHotspots(scene.hotspots || []);
 
+    // hide the scroll while the new background renders
+    textArea.classList.remove('visible');
+
     if (!scene.text) {
       // exploration scene — keep scroll hidden, let the player click hotspots
-      textArea.classList.remove('visible');
       return;
     }
 
-    textArea.classList.add('visible');
-    // wait for the 0.3s scroll fade-in, then type the text
+    // pacing for every scene transition:
+    //   0   ms : background image swapped in (above)
+    //   500 ms : scroll fades in (0.3s opacity transition)
+    //   800 ms : typewriter starts (= 500ms image gap + 300ms scroll gap)
+    setTimeout(() => {
+      textArea.classList.add('visible');
+    }, 500);
     setTimeout(() => {
       setText(scene.text, { speed: scene.speed || 70, onDone: showNextButton });
-    }, 300);
+    }, 800);
   }
 
   /* ---------- hotspots (clickable regions on the scene) ---------- */
