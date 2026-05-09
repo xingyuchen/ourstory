@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Game</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #fff;
+  }
+
+  /* room / wall behind the monitor */
+  #stage {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    background:
+      radial-gradient(ellipse at 50% 30%, #d6ecff 0%, #aed4f5 55%, #88bce8 100%);
+  }
+
+  /* desk surface */
+  #stage::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 28%;
+    background: linear-gradient(to bottom, transparent 0%, rgba(60, 90, 120, 0.25) 60%, rgba(40, 70, 100, 0.45) 100%);
+    pointer-events: none;
+  }
+
+  #monitor-rig {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -62%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* the monitor body / bezel */
+  #monitor {
+    position: relative;
+    padding: 16px 16px 36px 16px;
+    background: linear-gradient(to bottom, #1c1d20 0%, #0d0e10 100%);
+    border-radius: 16px;
+    box-shadow:
+      0 30px 70px rgba(0, 0, 0, 0.7),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+      inset 0 -3px 6px rgba(0, 0, 0, 0.6);
+  }
+
+  /* power LED */
+  #monitor::after {
+    content: '';
+    position: absolute;
+    bottom: 13px;
+    right: 26px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #5cf38a;
+    box-shadow: 0 0 8px #5cf38a;
+  }
+
+  /* red power button — sits over the green LED until clicked */
+  #powerBtn {
+    position: absolute;
+    bottom: 9px;
+    right: 22px;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.55);
+    background: radial-gradient(circle at 32% 30%, #ff7878 0%, #d20000 60%, #6a0000 100%);
+    box-shadow:
+      0 0 8px rgba(255, 60, 60, 0.85),
+      inset 0 1px 1px rgba(255, 255, 255, 0.3),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    z-index: 10;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    animation: power-btn-pulse 1.6s ease-in-out infinite;
+  }
+
+  #powerBtn:hover {
+    transform: scale(1.18);
+    box-shadow:
+      0 0 14px rgba(255, 60, 60, 1),
+      inset 0 1px 1px rgba(255, 255, 255, 0.4),
+      inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+  }
+
+  #powerBtn:active {
+    transform: scale(0.92);
+  }
+
+  #powerBtn.hidden {
+    display: none;
+  }
+
+  @keyframes power-btn-pulse {
+    0%, 100% {
+      box-shadow:
+        0 0 6px rgba(255, 60, 60, 0.7),
+        inset 0 1px 1px rgba(255, 255, 255, 0.3),
+        inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+    }
+    50% {
+      box-shadow:
+        0 0 14px rgba(255, 80, 80, 1),
+        inset 0 1px 1px rgba(255, 255, 255, 0.4),
+        inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+    }
+  }
+
+  /* white flash overlay */
+  #screenFlash {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 50;
+  }
+
+  #screenFlash.flashing {
+    animation: screen-flash 0.5s ease-out forwards;
+  }
+
+  /* 0.5s total: quick fade-in, hold, quick fade-out — solid white for ~0.5s */
+  @keyframes screen-flash {
+    0%   { opacity: 0; }
+    20%  { opacity: 1; }
+    80%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* brand bar */
+  #monitor::before {
+    content: '';
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 32px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  #screen {
+    position: relative;
+    width: 75vw;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    transition: background 0.4s ease-out;
+  }
+
+  /* powered-on screen has a faint glow so it's visibly different from the off (pure black) state */
+  #screen.powered-on {
+    background: radial-gradient(ellipse at center, #2a2d3a 0%, #161823 70%, #0e1018 100%);
+  }
+
+  /* monitor neck */
+  #neck {
+    width: 80px;
+    height: 32px;
+    background: linear-gradient(to bottom, #1a1b1e, #0d0e10);
+    border-radius: 0 0 8px 8px;
+    box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.6);
+  }
+
+  /* monitor base */
+  #base {
+    width: 240px;
+    height: 16px;
+    background: linear-gradient(to bottom, #1c1d20 0%, #0a0b0d 100%);
+    border-radius: 50%;
+    margin-top: 2px;
+    box-shadow:
+      0 12px 22px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  /* keyboard on the desk */
+  #keyboard {
+    position: absolute;
+    bottom: 4%;
+    left: 50%;
+    transform: translateX(-50%) perspective(900px) rotateX(55deg);
+    transform-origin: bottom center;
+    width: 38%;
+    height: 14%;
+    background: linear-gradient(to bottom, #26272b 0%, #15161a 100%);
+    border-radius: 8px;
+    box-shadow:
+      0 18px 28px rgba(0, 0, 0, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -2px 4px rgba(0, 0, 0, 0.5);
+    z-index: 2;
+  }
+
+  /* the key grid */
+  #keyboard::before {
+    content: '';
+    position: absolute;
+    inset: 8% 4%;
+    background-color: transparent;
+    background-image:
+      linear-gradient(to right, rgba(0,0,0,0.7) 0 2px, transparent 2px),
+      linear-gradient(to bottom, rgba(0,0,0,0.7) 0 2px, transparent 2px),
+      linear-gradient(to bottom, rgba(255,255,255,0.06) 0 50%, transparent 50%);
+    background-size:
+      calc(100% / 15) calc(100% / 4),
+      calc(100% / 15) calc(100% / 4),
+      calc(100% / 15) calc(100% / 4);
+    border-radius: 3px;
+  }
+
+  /* spacebar hint */
+  #keyboard::after {
+    content: '';
+    position: absolute;
+    bottom: 12%;
+    left: 30%;
+    width: 40%;
+    height: 16%;
+    background: linear-gradient(to bottom, #2e2f33 0%, #1a1b1f 100%);
+    border-radius: 2px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.5);
+  }
+
+  /* mouse */
+  #mouse {
+    position: absolute;
+    bottom: 6%;
+    left: calc(50% + 22%);
+    width: 3.6%;
+    height: 7.5%;
+    background: linear-gradient(to bottom, #2a2b2f 0%, #15161a 100%);
+    border-radius: 50% 50% 46% 46% / 58% 58% 42% 42%;
+    box-shadow:
+      0 10px 18px rgba(0, 0, 0, 0.65),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    z-index: 2;
+  }
+
+  /* scroll wheel hint */
+  #mouse::before {
+    content: '';
+    position: absolute;
+    top: 18%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 14%;
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 1px;
+  }
+
+  /* mouse split line */
+  #mouse::after {
+    content: '';
+    position: absolute;
+    top: 38%;
+    left: 50%;
+    width: 1px;
+    height: 30%;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  #game {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  #gameBg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: none;
+  }
+
+  #gameUI {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 4%;
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+
+  #gameUI > * {
+    pointer-events: auto;
+  }
+
+  /* text panel — sits at the bottom of the display area.
+     text_display.png is a scroll/banner ~2.25:1; we let it size by width
+     and keep its natural aspect ratio so it doesn't squish. */
+  #textArea {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    transform: translateX(-50%);
+    width: 65%;
+    height: 27%;
+    background-image: url('text_display_trim.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    background-position: center;
+    padding: 2.4% 7%;
+    box-sizing: border-box;
+    color: #3a2a14;
+    font-size: 1.15vw;
+    line-height: 1.55;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease-out;
+    z-index: 3;
+  }
+
+  #textArea.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* center the scroll vertically for chapter-title style scenes */
+  #textArea.centered {
+    bottom: auto;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  #textArea.typing {
+    cursor: pointer;
+  }
+
+  #textContent {
+    width: 100%;
+    word-wrap: break-word;
+  }
+
+  /* blinking cursor that appears while typing */
+  #textCursor {
+    display: none;
+    margin-left: 2px;
+    animation: text-cursor-blink 0.7s steps(1) infinite;
+    color: #3a2a14;
+  }
+
+  #textArea.typing #textCursor {
+    display: inline-block;
+  }
+
+  @keyframes text-cursor-blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+
+  /* image overlay (e.g. close-up view of the book) */
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 40;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s ease-out;
+  }
+
+  #overlay.visible {
+    pointer-events: auto;
+    opacity: 1;
+  }
+
+  #overlay.hidden {
+    display: none;
+  }
+
+  .overlay-frame {
+    position: relative;
+    width: 60%;
+    max-height: 80%;
+    transform: translate(1%, -3.75%);
+    filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.7));
+  }
+
+  #overlayImage {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+
+  #overlayClose {
+    position: absolute;
+    top: -2.5%;
+    right: -1.5%;
+    width: 2vw;
+    height: 2vw;
+    min-width: 26px;
+    min-height: 26px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+    background: rgba(20, 20, 28, 0.88);
+    color: #f4f4f4;
+    font-size: 1.1vw;
+    font-family: inherit;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, transform 0.12s ease, border-color 0.15s ease;
+  }
+
+  #overlayClose:hover {
+    background: rgba(40, 40, 60, 0.95);
+    border-color: rgba(255, 255, 255, 0.85);
+    transform: scale(1.1);
+  }
+
+  #overlayClose:active {
+    transform: scale(0.92);
+  }
+
+  /* clickable hotspots over the scene — invisible; the player has to find them */
+  .hotspot {
+    position: absolute;
+    cursor: pointer;
+    background: transparent;
+    z-index: 2;
+  }
+
+  /* "close" × button — sits in top-right of the scroll while it's visible */
+  #closeBtn {
+    position: absolute;
+    top: 18%;
+    right: 13%;
+    width: 1.7vw;
+    height: 1.7vw;
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(58, 42, 20, 0.12);
+    color: #3a2a14;
+    font-size: 1vw;
+    font-family: inherit;
+    line-height: 1;
+    cursor: pointer;
+    display: none;
+    transition: background 0.15s ease, transform 0.12s ease;
+  }
+
+  #closeBtn:hover {
+    background: rgba(58, 42, 20, 0.3);
+    transform: scale(1.12);
+  }
+
+  #closeBtn:active {
+    transform: scale(0.9);
+  }
+
+  /* close button only shows when the scroll was opened by a hotspot click —
+     dialogue scenes use the next ▶ button instead and shouldn't be dismissable. */
+  #textArea.visible.closable #closeBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* "next" arrow button — appears in bottom-right of the scroll after typing finishes */
+  #nextBtn {
+    position: absolute;
+    right: 13%;
+    bottom: 22%;
+    width: 1.8vw;
+    height: 1.8vw;
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(58, 42, 20, 0.12);
+    color: #3a2a14;
+    font-size: 1vw;
+    font-family: inherit;
+    line-height: 1;
+    text-align: center;
+    cursor: pointer;
+    display: none;
+    animation: next-arrow-pulse 1.2s ease-in-out infinite;
+    transition: background 0.15s ease, transform 0.12s ease;
+  }
+
+  #nextBtn:hover {
+    background: rgba(58, 42, 20, 0.28);
+    transform: scale(1.12);
+  }
+
+  #nextBtn:active {
+    transform: scale(0.92);
+  }
+
+  #textArea.ready #nextBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  @keyframes next-arrow-pulse {
+    0%, 100% { transform: translateX(0); opacity: 0.65; }
+    50%      { transform: translateX(3px); opacity: 1; }
+  }
+
+  /* input area — sits on the desk, in the gap between the keyboard and the monitor base */
+  #inputArea {
+    position: absolute;
+    bottom: 11.5%;
+    left: 50%;
+    transform: translateX(-50%);
+    display: none;
+    gap: 0.6vw;
+    padding: 0.3vw 0.6vw;
+    z-index: 5;
+  }
+
+  #inputArea.visible {
+    display: flex;
+  }
+
+  .input-box {
+    width: 3.4vw;
+    height: 3.6vw;
+    font-size: 2vw;
+    text-align: center;
+    background: rgba(18, 20, 26, 0.92);
+    color: #fff;
+    border: 2px solid rgba(255, 255, 255, 0.22);
+    border-radius: 6px;
+    outline: none;
+    font-family: inherit;
+    caret-color: #5cf38a;
+    box-shadow:
+      0 6px 14px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+    padding: 0;
+  }
+
+  .input-box:focus {
+    border-color: #5cf38a;
+    box-shadow:
+      0 0 0 2px rgba(92, 243, 138, 0.22),
+      0 6px 14px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
+  }
+
+  .input-box.shake {
+    animation: input-shake 0.35s ease;
+    border-color: #ff6b6b;
+  }
+
+  .input-enter {
+    height: 3.6vw;
+    min-height: 36px;
+    margin-left: 0.8vw;
+    padding: 0 1vw;
+    background: linear-gradient(to bottom, #2d2f37 0%, #14161c 100%);
+    color: #e6ecf6;
+    border: 2px solid rgba(255, 255, 255, 0.22);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 1.05vw;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow:
+      0 6px 14px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  }
+
+  .input-enter:hover {
+    background: linear-gradient(to bottom, #3a3d48 0%, #1c1e26 100%);
+    border-color: #5cf38a;
+  }
+
+  .input-enter:active {
+    transform: translateY(1px);
+  }
+
+  @keyframes input-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-4px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(3px); }
+  }
+
+  .hidden {
+    display: none !important;
+  }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <div id="monitor-rig">
+      <div id="monitor">
+        <div id="screen">
+          <div id="game">
+            <img id="gameBg" alt="">
+            <div id="gameUI"></div>
+            <div id="textArea">
+              <div id="textContent"><span id="textRun"></span><span id="textCursor">▌</span></div>
+              <button id="closeBtn" type="button" aria-label="Close">×</button>
+              <button id="nextBtn" type="button" aria-label="Next">▶</button>
+            </div>
+            <div id="overlay" class="hidden">
+              <div class="overlay-frame">
+                <img id="overlayImage" src="" alt="">
+                <button id="overlayClose" type="button" aria-label="Close">×</button>
+              </div>
+            </div>
+            <div id="screenFlash"></div>
+          </div>
+        </div>
+        <button id="powerBtn" type="button" aria-label="Power on"></button>
+      </div>
+      <div id="neck"></div>
+      <div id="base"></div>
+    </div>
+
+    <div id="keyboard"></div>
+    <div id="mouse"></div>
+
+    <div id="inputArea"></div>
+  </div>
+
+<script>
+  const gameBg = document.getElementById('gameBg');
+  const gameUI = document.getElementById('gameUI');
+  const textArea = document.getElementById('textArea');
+  const textContent = document.getElementById('textContent');
+  const textRun = document.getElementById('textRun');
+  const inputArea = document.getElementById('inputArea');
+  let inputSubmitHandler = null;
+  let typewriterTimer = null;
+  let typewriterFullText = '';
+  let typewriterOnDone = null;
+
+  function setBackground(filename) {
+    if (!filename) {
+      gameBg.removeAttribute('src');
+      gameBg.style.display = 'none';
+      return;
+    }
+    gameBg.src = filename;
+    gameBg.style.display = 'block';
+  }
+
+  function setUI(html) {
+    gameUI.innerHTML = html;
+  }
+
+  /**
+   * setText(content)                  → animated at default speed (35ms/char)
+   * setText(content, 0)               → instant (no animation)
+   * setText(content, 60)              → animated at 60ms/char
+   * setText(content, { speed, onDone }) → animated, callback when done
+   * Click the panel mid-animation to skip to the end.
+   */
+  function setText(content, opts) {
+    // stop any running animation
+    if (typewriterTimer) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+    }
+    typewriterOnDone = null;
+
+    if (!content) {
+      textRun.textContent = '';
+      textArea.classList.remove('visible', 'typing');
+      typewriterFullText = '';
+      return;
+    }
+
+    let speed = 35;
+    if (typeof opts === 'number') {
+      speed = opts;
+    } else if (opts && typeof opts === 'object') {
+      if (typeof opts.speed === 'number') speed = opts.speed;
+      if (typeof opts.onDone === 'function') typewriterOnDone = opts.onDone;
+    }
+
+    typewriterFullText = content;
+    textArea.classList.add('visible');
+
+    if (speed <= 0) {
+      textRun.textContent = content;
+      textArea.classList.remove('typing');
+      const cb = typewriterOnDone;
+      typewriterOnDone = null;
+      if (cb) cb();
+      return;
+    }
+
+    textRun.textContent = '';
+    textArea.classList.add('typing');
+    let i = 0;
+    typewriterTimer = setInterval(() => {
+      if (i >= content.length) {
+        finishTyping();
+        return;
+      }
+      textRun.textContent += content[i];
+      i++;
+    }, speed);
+  }
+
+  function finishTyping() {
+    if (typewriterTimer) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+    }
+    textRun.textContent = typewriterFullText;
+    textArea.classList.remove('typing');
+    const cb = typewriterOnDone;
+    typewriterOnDone = null;
+    if (cb) cb();
+  }
+
+  function isTyping() {
+    return typewriterTimer !== null;
+  }
+
+  // click the panel to skip animation
+  textArea.addEventListener('click', () => {
+    if (typewriterTimer) finishTyping();
+  });
+
+  function clearText() {
+    setText('');
+  }
+
+  function clearScreen() {
+    setBackground(null);
+    setUI('');
+    clearText();
+    clearInput();
+  }
+
+  /* ---------- input area (between keyboard and monitor) ---------- */
+
+  /**
+   * setInput(length, onSubmit, options?)
+   * options:
+   *   numericOnly:     true  → boxes accept only 0-9
+   *   showEnterButton: true  → render a "確認" button after the boxes
+   *   buttonLabel:     string → custom button label (default "確認")
+   */
+  function setInput(length, onSubmit, options) {
+    inputArea.innerHTML = '';
+    inputSubmitHandler = onSubmit || null;
+
+    const n = parseInt(length, 10);
+    if (!n || n < 1) {
+      inputArea.classList.remove('visible');
+      return;
+    }
+
+    const opts = options || {};
+    const numericOnly = !!opts.numericOnly;
+    const showEnterButton = !!opts.showEnterButton;
+
+    for (let i = 0; i < n; i++) {
+      const box = document.createElement('input');
+      box.type = 'text';
+      // NOTE: no maxLength — it would block Chinese IME composition
+      // (which needs to accumulate latin pinyin keystrokes before producing one char).
+      // We truncate to 1 character ourselves in handleInputBoxInput after composition ends.
+      box.className = 'input-box';
+      if (numericOnly) {
+        box.inputMode = 'numeric';
+        box.setAttribute('pattern', '[0-9]*');
+        box.maxLength = 1;            // safe to enforce for digits
+        box.dataset.numeric = '1';
+      }
+      box.setAttribute('autocomplete', 'off');
+      box.setAttribute('autocorrect', 'off');
+      box.setAttribute('autocapitalize', 'off');
+      box.setAttribute('spellcheck', 'false');
+      box.dataset.index = i;
+      box.addEventListener('input', handleInputBoxInput);
+      box.addEventListener('keydown', handleInputBoxKeydown);
+      box.addEventListener('compositionstart', handleCompositionStart);
+      box.addEventListener('compositionend', handleCompositionEnd);
+      box.addEventListener('focus', () => box.select());
+      inputArea.appendChild(box);
+    }
+
+    if (showEnterButton) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'input-enter';
+      btn.textContent = opts.buttonLabel || '確認';
+      btn.addEventListener('click', submitInput);
+      inputArea.appendChild(btn);
+    }
+
+    inputArea.classList.add('visible');
+    setTimeout(() => {
+      const first = inputArea.querySelector('.input-box');
+      if (first) first.focus();
+    }, 0);
+  }
+
+  function nextInputBox(box) {
+    const sib = box.nextElementSibling;
+    return (sib && sib.classList.contains('input-box')) ? sib : null;
+  }
+
+  function prevInputBox(box) {
+    const sib = box.previousElementSibling;
+    return (sib && sib.classList.contains('input-box')) ? sib : null;
+  }
+
+  function handleCompositionStart(e) {
+    // mark this box as "composing" so input handling is paused until the user
+    // finishes selecting their Chinese (or other IME) character
+    e.target.dataset.composing = '1';
+  }
+
+  function handleCompositionEnd(e) {
+    const box = e.target;
+    delete box.dataset.composing;
+    // run the standard input pipeline now that we have the final character
+    handleInputBoxInput({ target: box });
+  }
+
+  function handleInputBoxInput(e) {
+    const box = e.target;
+    // ignore intermediate input events while IME is composing — let the user
+    // type their full pinyin sequence first
+    if (box.dataset.composing) return;
+
+    if (box.dataset.numeric === '1') {
+      box.value = box.value.replace(/[^0-9]/g, '');
+    }
+    // keep only the last character (works for paste, IME output, regular typing)
+    if (box.value.length > 1) box.value = box.value.slice(-1);
+
+    if (!box.value) return;
+    const next = nextInputBox(box);
+    if (next) {
+      next.focus();
+    } else {
+      // last box filled — auto submit (Enter button users get same behaviour)
+      submitInput();
+    }
+  }
+
+  function handleInputBoxKeydown(e) {
+    const box = e.target;
+    // never act on keys while the IME is open
+    if (box.dataset.composing || e.isComposing) return;
+
+    if (e.key === 'Backspace') {
+      if (!box.value) {
+        const prev = prevInputBox(box);
+        if (prev) {
+          prev.focus();
+          prev.value = '';
+          e.preventDefault();
+        }
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      submitInput();
+    } else if (e.key === 'ArrowLeft') {
+      const prev = prevInputBox(box);
+      if (prev) { prev.focus(); e.preventDefault(); }
+    } else if (e.key === 'ArrowRight') {
+      const next = nextInputBox(box);
+      if (next) { next.focus(); e.preventDefault(); }
+    }
+  }
+
+  function getInputValue() {
+    return Array.from(inputArea.querySelectorAll('.input-box'))
+      .map(b => b.value)
+      .join('');
+  }
+
+  function submitInput() {
+    if (inputSubmitHandler) {
+      inputSubmitHandler(getInputValue());
+    }
+  }
+
+  function clearInput() {
+    inputArea.innerHTML = '';
+    inputArea.classList.remove('visible');
+    inputSubmitHandler = null;
+  }
+
+  function shakeInput() {
+    const boxes = inputArea.querySelectorAll('.input-box');
+    boxes.forEach(b => {
+      b.classList.remove('shake');
+      // force reflow so the animation can replay
+      void b.offsetWidth;
+      b.classList.add('shake');
+      b.value = '';
+    });
+    setTimeout(() => {
+      boxes.forEach(b => b.classList.remove('shake'));
+      const first = inputArea.querySelector('.input-box');
+      if (first) first.focus();
+    }, 400);
+  }
+
+  /* ---------- power-on flow & scene system ---------- */
+
+  const powerBtn = document.getElementById('powerBtn');
+  const screenFlash = document.getElementById('screenFlash');
+  const nextBtn = document.getElementById('nextBtn');
+
+  // Add scenes here. When the player finishes reading and clicks the arrow,
+  // the next scene's bg loads and its text types onto the scroll.
+  const SCENES = [
+    {
+      bg: null,
+      text: '昨晚玩遊戲不小心睡著了....奇怪，我的房間怎麼這麼暗？',
+      speed: 70
+    },
+    {
+      bg: 'screen1.png',
+      text: '這是哪裡啊？這不是我的房間...',
+      speed: 70
+    },
+    {
+      bg: 'screen1.png',
+      text: '我被綁架了嗎？先看看這是哪裡好了',
+      speed: 70
+    },
+    {
+      bg: 'screen1.png',
+      text: '窗戶打不開，上面有一把鎖...',
+      speed: 70
+    },
+    {
+      // exploration scene — scroll is hidden; player explores via hotspots
+      bg: 'screen1.png',
+      text: null,
+      hotspots: [
+        { id: 'lock',  left: '50%', top: '20%', width: '11%', height: '13%' },
+        { id: 'books', left: '8%',  top: '74%', width: '19%', height: '10%' }
+      ]
+    },
+    {
+      // lock solved — fresh background, success message
+      bg: 'screen2.jpeg',
+      text: '鎖開了！我看看窗外是什麼...',
+      speed: 70
+    },
+    {
+      bg: 'screen3.png',
+      text: '哇！好一座氣勢恢弘的宮殿！這到底是哪裡啊？',
+      speed: 70
+    },
+    {
+      bg: 'screen3.png',
+      text: '太詭異了！貿然跑出去太危險，我還是先找找線索看看這裡是哪裡吧...',
+      speed: 70
+    },
+    {
+      // moves to screen4 with the scroll hidden; 3 hotspots to discover
+      bg: 'screen4.png',
+      text: null,
+      hotspots: [
+        // entire window (broad area; specific items inside will catch clicks first)
+        { id: 'window', left: '18%', top: '2%',  width: '60%', height: '60%' },
+        // the two calligraphy characters near the top of the window
+        { id: 'chars',  left: '40%', top: '2%',  width: '10%', height: '12%' },
+        // small sign / icon on the stairs leading up to the palace
+        { id: 'stairs', left: '45%', top: '50%', width: '5%',  height: '9%'  }
+      ]
+    },
+    {
+      // window puzzle solved — still inside (screen4), reflecting on the answer
+      bg: 'screen4.png',
+      text: '純陽宮？這是什麼地方？不管了，先出去看看...',
+      speed: 70
+    },
+    {
+      // stepped outside — screen5
+      bg: 'screen5.png',
+      text: '終於出來了！前面好像很熱鬧，去看看...',
+      speed: 70
+    },
+    {
+      // chapter title card — blank screen, scroll in the middle
+      bg: null,
+      text: '初相識',
+      speed: 90,
+      centered: true
+    }
+  ];
+  let sceneIndex = 0;
+
+  function flashScreen() {
+    screenFlash.classList.remove('flashing');
+    // force reflow so the animation restarts cleanly
+    void screenFlash.offsetWidth;
+    screenFlash.classList.add('flashing');
+  }
+
+  function showNextButton() {
+    if (sceneIndex < SCENES.length - 1) {
+      textArea.classList.add('ready');
+    }
+  }
+
+  function startScene(scene) {
+    setBackground(scene.bg || null);
+    textRun.textContent = '';
+    // dialogue scenes are advanced via the next button, not closed
+    textArea.classList.remove('ready', 'closable');
+    // chapter-title scenes show the scroll in the middle of the screen
+    textArea.classList.toggle('centered', !!scene.centered);
+    // each scene starts with a clean slate
+    clearInput();
+    closeOverlay();
+
+    // render any hotspots defined for this scene
+    renderHotspots(scene.hotspots || []);
+
+    if (!scene.text) {
+      // exploration scene — keep scroll hidden, let the player click hotspots
+      textArea.classList.remove('visible');
+      return;
+    }
+
+    textArea.classList.add('visible');
+    // wait for the 0.3s scroll fade-in, then type the text
+    setTimeout(() => {
+      setText(scene.text, { speed: scene.speed || 70, onDone: showNextButton });
+    }, 300);
+  }
+
+  /* ---------- hotspots (clickable regions on the scene) ---------- */
+
+  const game = document.getElementById('game');
+
+  function renderHotspots(list) {
+    // remove any leftover hotspots from a previous scene
+    document.querySelectorAll('.hotspot').forEach(h => h.remove());
+
+    for (const h of list) {
+      const el = document.createElement('div');
+      el.className = 'hotspot';
+      el.style.left = h.left;
+      el.style.top = h.top;
+      el.style.width = h.width;
+      el.style.height = h.height;
+      el.dataset.id = h.id;
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handleHotspotClick(h.id);
+      });
+      // insert before textArea so the textArea stays on top when visible
+      game.insertBefore(el, textArea);
+    }
+  }
+
+  // Click behaviours per hotspot. Customise these freely.
+  const HOTSPOT_ACTIONS = {
+    lock: () => {
+      closeOverlay();
+      setText('上面有7道刻度，密碼是什麼呢？', { speed: 60 });
+      setInput(7, onLockSubmit, { numericOnly: true });
+    },
+    books: () => {
+      // hide the scroll/input from any prior interaction, then show the book overlay
+      closeScroll();
+      showOverlay('book.png');
+    },
+    // screen4 hotspots — placeholder text; replace with the real interactions
+    window: () => {
+      closeOverlay();
+      setText('貿然出去太危險了！先弄清楚這是什麼地方吧...', { speed: 60 });
+      setInput(3, onWindowSubmit);
+    },
+    chars: () => {
+      closeOverlay();
+      setText('這是輕功嗎！？世界上竟然真的有這東西！', { speed: 60 });
+    },
+    stairs: () => {
+      closeOverlay();
+      setText('好像是一個八卦的圖案，可是怎麼只有陽沒有陰呢？', { speed: 60 });
+    }
+  };
+
+  /* ---------- image overlay (book close-up etc.) ---------- */
+
+  const overlayEl = document.getElementById('overlay');
+  const overlayImage = document.getElementById('overlayImage');
+  const overlayClose = document.getElementById('overlayClose');
+
+  function showOverlay(src) {
+    overlayImage.src = src;
+    overlayEl.classList.remove('hidden');
+    // next frame so the opacity transition can run
+    requestAnimationFrame(() => overlayEl.classList.add('visible'));
+  }
+
+  function closeOverlay() {
+    if (overlayEl.classList.contains('hidden')) return;
+    overlayEl.classList.remove('visible');
+    setTimeout(() => overlayEl.classList.add('hidden'), 260);
+  }
+
+  overlayClose.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeOverlay();
+  });
+
+  const LOCK_ANSWER = '1071224';
+
+  const WINDOW_ANSWER = '純陽宮';
+
+  function onWindowSubmit(value) {
+    if (value === WINDOW_ANSWER) {
+      // correct — clean up exploration UI, advance to screen5 with the line
+      clearInput();
+      closeOverlay();
+      nextScene();
+    } else {
+      shakeInput();
+      setText('這看起來像一座道觀...', { speed: 60 });
+    }
+  }
+
+  function onLockSubmit(value) {
+    if (value === LOCK_ANSWER) {
+      // correct — clear the input, close the book overlay if open,
+      // and advance to the next scene (which has bg=screen2.png and text=鎖開了！)
+      clearInput();
+      closeOverlay();
+      nextScene();
+    } else {
+      // stay on the same scene; shake the boxes and replace the prompt with a hint
+      shakeInput();
+      setText('好像不是這組密碼，感覺是一個日期...', { speed: 60 });
+    }
+  }
+
+  function handleHotspotClick(id) {
+    textArea.classList.remove('ready');
+    textArea.classList.add('closable'); // hotspot-triggered scrolls show the × button
+    clearInput();              // reset any stale input from a previous hotspot
+    const action = HOTSPOT_ACTIONS[id];
+    if (action) action();
+  }
+
+  function nextScene() {
+    if (sceneIndex >= SCENES.length - 1) return;
+    nextBtn.blur();
+    textArea.classList.remove('ready');
+    if (typewriterTimer) finishTyping();
+
+    // fade scroll out
+    textArea.classList.remove('visible');
+
+    // after fade-out, swap scene and bring scroll back
+    setTimeout(() => {
+      sceneIndex++;
+      startScene(SCENES[sceneIndex]);
+    }, 320);
+  }
+
+  function powerOn() {
+    powerBtn.classList.add('hidden');
+    document.getElementById('screen').classList.add('powered-on');
+    flashScreen();
+    // sequence:
+    //   0  - 500 ms : white flash (CSS animation)
+    //   500 - 700 ms : darker-than-off "powered-on" screen (0.2 s gap)
+    //   700 ms      : scroll begins fading in (0.3 s opacity transition)
+    //   1000 ms     : typewriter text begins, slow speed
+    const first = SCENES[0];
+    setTimeout(() => {
+      setBackground(first.bg || null);
+      textRun.textContent = '';
+      textArea.classList.add('visible');
+    }, 700);
+    setTimeout(() => {
+      setText(first.text, { speed: first.speed || 70, onDone: showNextButton });
+    }, 1000);
+  }
+
+  function closeScroll() {
+    if (typewriterTimer) {
+      clearInterval(typewriterTimer);
+      typewriterTimer = null;
+    }
+    textArea.classList.remove('visible', 'ready', 'typing', 'closable');
+    clearInput();
+  }
+
+  const closeBtn = document.getElementById('closeBtn');
+
+  powerBtn.addEventListener('click', powerOn);
+  nextBtn.addEventListener('click', (e) => {
+    // don't let the click bubble to textArea (which would also fire the skip-typing handler)
+    e.stopPropagation();
+    nextScene();
+  });
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeScroll();
+  });
+
+  window.setBackground = setBackground;
+  window.setUI = setUI;
+  window.setText = setText;
+  window.clearText = clearText;
+  window.clearScreen = clearScreen;
+  window.setInput = setInput;
+  window.clearInput = clearInput;
+  window.getInputValue = getInputValue;
+  window.shakeInput = shakeInput;
+  window.finishTyping = finishTyping;
+  window.isTyping = isTyping;
+  window.flashScreen = flashScreen;
+  window.powerOn = powerOn;
+  window.showOverlay = showOverlay;
+  window.closeOverlay = closeOverlay;
+</script>
+</body>
+</html>
