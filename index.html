@@ -679,14 +679,38 @@
   let typewriterFullText = '';
   let typewriterOnDone = null;
 
+  /** Sets the background image and resolves only once it is fully loaded & decoded.
+   *  Cached images resolve almost instantly; first-time loads wait for the network. */
   function setBackground(filename) {
     if (!filename) {
       gameBg.removeAttribute('src');
       gameBg.style.display = 'none';
-      return;
+      return Promise.resolve();
     }
-    gameBg.src = filename;
+
+    const sameSrc = gameBg.src && gameBg.src.split('/').pop() === filename;
+    if (!sameSrc) {
+      gameBg.src = filename;
+    }
     gameBg.style.display = 'block';
+
+    if (gameBg.complete && gameBg.naturalWidth > 0) {
+      return Promise.resolve();
+    }
+
+    if (typeof gameBg.decode === 'function') {
+      return gameBg.decode().catch(() => {});
+    }
+
+    return new Promise((resolve) => {
+      const done = () => {
+        gameBg.removeEventListener('load', done);
+        gameBg.removeEventListener('error', done);
+        resolve();
+      };
+      gameBg.addEventListener('load', done, { once: true });
+      gameBg.addEventListener('error', done, { once: true });
+    });
   }
 
   function setUI(html) {
@@ -1052,38 +1076,42 @@
     }
   }
 
+  // bumps every time startScene runs so stale timers from a cancelled scene
+  // (e.g. user advanced to the next one before the previous bg finished loading)
+  // are ignored
+  let sceneRunId = 0;
+
   function startScene(scene) {
-    setBackground(scene.bg || null);
+    const runId = ++sceneRunId;
     textRun.textContent = '';
-    // dialogue scenes are advanced via the next button, not closed
     textArea.classList.remove('ready', 'closable');
-    // chapter-title scenes show the scroll in the middle of the screen
     textArea.classList.toggle('centered', !!scene.centered);
-    // each scene starts with a clean slate
     clearInput();
     closeOverlay();
-
-    // render any hotspots defined for this scene
     renderHotspots(scene.hotspots || []);
-
-    // hide the scroll while the new background renders
+    // hide the scroll while the new background loads
     textArea.classList.remove('visible');
 
-    if (!scene.text) {
-      // exploration scene — keep scroll hidden, let the player click hotspots
-      return;
-    }
+    // wait for the bg image to actually finish loading before pacing the rest
+    Promise.resolve(setBackground(scene.bg || null)).then(() => {
+      if (runId !== sceneRunId) return;       // a newer scene has started
 
-    // pacing for every scene transition:
-    //   0   ms : background image swapped in (above)
-    //   500 ms : scroll fades in (0.3s opacity transition)
-    //   800 ms : typewriter starts (= 500ms image gap + 300ms scroll gap)
-    setTimeout(() => {
-      textArea.classList.add('visible');
-    }, 500);
-    setTimeout(() => {
-      setText(scene.text, { speed: scene.speed || 70, onDone: showNextButton });
-    }, 800);
+      if (!scene.text) {
+        return;                                // exploration scene — stop here
+      }
+
+      // pacing AFTER the image is on screen:
+      //   +0   ms : image fully loaded & shown
+      //   +500 ms : scroll fades in (0.3s opacity transition)
+      //   +800 ms : typewriter starts
+      setTimeout(() => {
+        if (runId === sceneRunId) textArea.classList.add('visible');
+      }, 500);
+      setTimeout(() => {
+        if (runId !== sceneRunId) return;
+        setText(scene.text, { speed: scene.speed || 70, onDone: showNextButton });
+      }, 800);
+    });
   }
 
   /* ---------- hotspots (clickable regions on the scene) ---------- */
